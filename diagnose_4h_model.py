@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Script to diagnose issues with the 24h timeframe model
+Script to diagnose issues with the 4h timeframe model
 """
 
 import os
@@ -24,11 +24,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from controllers.prediction import get_model, prepare_features, predict_next_price
 from controllers.data_fetcher import DataFetcher
 
-async def diagnose_24h_model(symbol="BTC"):
+async def diagnose_4h_model(symbol="BTC"):
     """
-    Diagnose issues with the 24h timeframe model for a given symbol
+    Diagnose issues with the 4h timeframe model for a given symbol
     """
-    timeframe = "24h"
+    timeframe = "4h"
     logger.info(f"Starting diagnosis of {timeframe} model for {symbol}")
     
     try:
@@ -50,7 +50,7 @@ async def diagnose_24h_model(symbol="BTC"):
         features_df, target_series = await prepare_features(symbol, timeframe)
         logger.info(f"Prepared features shape: {features_df.shape}")
         logger.info(f"Target shape: {len(target_series)}")
-        logger.info(f"Target type: absolute price (for 24h)")
+        logger.info(f"Target type: absolute price (for 4h)")
         logger.info(f"Target range: {target_series.min()} to {target_series.max()}")
         logger.info(f"Last 5 target values: {target_series.tail()}")
         
@@ -72,7 +72,7 @@ async def diagnose_24h_model(symbol="BTC"):
         # Get hyperparameters for this symbol/timeframe
         from simple_config import TIMEFRAME_MAP
         timeframe_config = TIMEFRAME_MAP.get(timeframe, {})
-        lookback = timeframe_config.get('lookback', 72)
+        lookback = timeframe_config.get('lookback', 60)
         
         # Prepare test data (last 30 days)
         test_end = historical_data.index.max()
@@ -96,8 +96,8 @@ async def diagnose_24h_model(symbol="BTC"):
         model.eval()  # Ensure model is in evaluation mode
         
         for i in range(lookback, len(test_data)-1):
-            current_data = test_data.iloc[:i+1]  # Data up to current day
-            next_actual = test_data.iloc[i+1]['Close']  # Next day's close price
+            current_data = test_data.iloc[:i+1]  # Data up to current 4h
+            next_actual = test_data.iloc[i+1]['Close']  # Next 4h's close price
             
             # Prepare features
             curr_features = features_df.loc[current_data.index]
@@ -124,7 +124,7 @@ async def diagnose_24h_model(symbol="BTC"):
             # Store results
             predictions.append(pred_value)
             actuals.append(next_actual)
-            logger.info(f"Date: {test_data.index[i+1]}, Predicted: {pred_value:.2f}, Actual: {next_actual:.2f}, Diff: {pred_value - next_actual:.2f} ({100*(pred_value-next_actual)/next_actual:.2f}%)")
+            logger.info(f"Time: {test_data.index[i+1]}, Predicted: {pred_value:.2f}, Actual: {next_actual:.2f}, Diff: {pred_value - next_actual:.2f} ({100*(pred_value-next_actual)/next_actual:.2f}%)")
         
         # Calculate performance metrics
         if predictions and actuals:
@@ -142,12 +142,12 @@ async def diagnose_24h_model(symbol="BTC"):
             # Check for large prediction errors
             abs_errors = np.abs(predictions - actuals)
             pct_errors = abs_errors / actuals * 100
-            large_errors = np.where(pct_errors > 10)[0]  # Errors > 10%
+            large_errors = np.where(pct_errors > 5)[0]  # Errors > 5%
             
             if len(large_errors) > 0:
-                logger.info(f"Found {len(large_errors)} large prediction errors (>10%):")
+                logger.info(f"Found {len(large_errors)} large prediction errors (>5%):")
                 for idx in large_errors:
-                    logger.info(f"  Date: {test_data.index[lookback+idx+1]}, Predicted: {predictions[idx]:.2f}, Actual: {actuals[idx]:.2f}, Error: {pct_errors[idx]:.2f}%")
+                    logger.info(f"  Time: {test_data.index[lookback+idx+1]}, Predicted: {predictions[idx]:.2f}, Actual: {actuals[idx]:.2f}, Error: {pct_errors[idx]:.2f}%")
                     
             # Detailed error analysis
             logger.info("====== Error Analysis ======")
@@ -178,10 +178,10 @@ async def diagnose_24h_model(symbol="BTC"):
             if target_sample_scaled.min() < -10 or target_sample_scaled.max() > 10:
                 logger.warning("Scaled target values outside normal range [-10, 10], could indicate scaling issues")
                 
-        # Make a fresh prediction for the next day
+        # Make a fresh prediction for the next timeframe
         logger.info("====== Fresh Prediction ======")
         prediction_result = await predict_next_price(symbol, timeframe)
-        logger.info(f"Next day prediction: {prediction_result['predicted_price']:.2f} (last price: {prediction_result['last_price']:.2f})")
+        logger.info(f"Next 4h prediction: {prediction_result['predicted_price']:.2f} (last price: {prediction_result['last_price']:.2f})")
         logger.info(f"Relative change: {100 * (prediction_result['predicted_price'] - prediction_result['last_price']) / prediction_result['last_price']:.2f}%")
         
         # Test model retraining to see if it helps
@@ -195,4 +195,4 @@ async def diagnose_24h_model(symbol="BTC"):
 
 if __name__ == "__main__":
     symbol = "BTC" if len(sys.argv) < 2 else sys.argv[1]
-    asyncio.run(diagnose_24h_model(symbol))
+    asyncio.run(diagnose_4h_model(symbol))
